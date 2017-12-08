@@ -27,6 +27,7 @@ START = 2
 STARTED = 3
 DONE = 4
 RESET = 5
+STOP = 6
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -135,6 +136,43 @@ def playBuzzer(lock):
         time.sleep(3)
         GPIO.output(24, False)
 
+def forceStop():
+    global endTime
+    payload = {"stop_time": endTime}
+    headers = {'content-type': 'application/json'}
+    dStatus = 404
+    fStatus = 404
+    try:
+        d = requests.Session()
+        retries = Retry(
+            total=5,
+            read=5,
+            connect=5,
+            backoff_factor=0.3,
+            status_forcelist=[ 502, 503, 504 ])
+        d.mount('http://', HTTPAdapter(max_retries=retries))
+        dResp = d.post("http://noisemakerpi/stop")
+        dStatus = dResp.status_code
+    except:
+        print "Error connecting to noisemakerpi"
+
+    try:
+        f = requests.Session()
+        retries = Retry(
+            total=5,
+            read=5,
+            connect=5,
+            backoff_factor=0.3,
+            status_forcelist=[ 502, 503, 504 ])
+        f.mount('http://', HTTPAdapter(max_retries=retries))
+        fResp = f.post("http://finisherbuttonpi/stop")
+        fStatus = fResp.status_code
+    except:
+        print "Error connecting to finisherbuttonpi"
+
+    if fResp.status_code == requests.codes.ok and dResp.status_code == requests.codes.ok:
+        print "WARNING system in a bad state"
+
 def notifyStop():
     global startTime
     payload = {"start_time": startTime}
@@ -173,37 +211,16 @@ def notifyDisplay():
     except:
         print "Error exception occurred notifying display"
 
-# def start():
-#     global startButtonPressed, buzzerLock, startTime
-#
-#     while not startButtonPressed:
-#         time.sleep(0.1)
-#
-#     d = threading.Thread(target=notifyDisplay)
-#     d.daemon = True
-#     f = threading.Thread(target=notifyStop)
-#     f.daemon = True
-#
-#     playBuzzer(buzzerLock)
-#     startTime = time.time()
-#     n.start()
-#     d.start()
-#
-#     while not doneSignal:
-#         time.sleep(.01)
-#
-#     while not stopSignal:
-#         time.sleep(.01)
-#
-#     reset()
-
 def waitForStart():
-    global STATE, WAIT, START, STARTED, startTime
+    global STATE, startTime, stateLock
+    currState = -1
 
     while True:
-        if STATE == WAIT :
+        with stateLock:
+            currState = STATE
+        if currState == WAIT :
             time.sleep(0.1)
-        elif STATE == START :
+        elif currState == START :
             d = threading.Thread(target=notifyDisplay)
             d.daemon = True
             f = threading.Thread(target=notifyStop)
@@ -212,19 +229,28 @@ def waitForStart():
             startTime = time.time()
             n.start()
             d.start()
-            STATE = STARTED
-        elif STATE == STARTED:
+            with stateLock:
+                STATE = STARTED
+        elif currState == STARTED:
             time.sleep(0.1)
-        elif STATE == RESET:
+        elif currState == RESET:
             #call reset on finisher and noise
             resetSystem()
-            STATE = DONE
-        elif STATE == DONE :
+            with stateLock:
+                STATE = DONE
+        elif currState == STOP:
+            forceStop()
+            with stateLock:
+                STATE = DONE
+        elif currState == DONE :
             print "Finished one iteration"
-            STATE = WAIT
+            with stateLock:
+                STATE = WAIT
+        else:
+            print "WARNING unknown state: " + currState
 
 def waitForButtonPress():
-    global stateLock, STATE
+    global stateLock, STATE, endTime
     prevState = True
     button_state = True
     buttonPushTime = 0.0
@@ -247,6 +273,10 @@ def waitForButtonPress():
                     print "RESET button press detected"
                     with stateLock:
                         STATE = RESET
+                else :
+                    with stateLock:
+                        STATE = STOP
+                        endTime = time.time()
         time.sleep(.5)
 
 if __name__ == '__main__':

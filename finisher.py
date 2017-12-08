@@ -1,11 +1,5 @@
-import threading, time, json
-import RPi.GPIO as GPIO
-from flask import Flask, request, Response
-import requests
-
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-
+import threading, time
+from flask import Flask, request
 app = Flask(__name__)
 
 DOME = 23
@@ -16,111 +10,161 @@ GPIO.setup(DOME, GPIO.IN, pull_up_down=GPIO.PUD_UP)  #dome button to GPIO23
 GPIO.setup(BUZZER, GPIO.OUT)  # to GPIO24
 
 buzzerLock = threading.Lock()
-startLock = threading.Lock()
-endLock = threading.Lock()
+stateLock = threading.Lock()
 
-stopSignal = False
-startSignal = False
-stopButtonPressed = False
+STATE = 0
+WAIT = 1
+STARTED = 3
+DONE = 4
+RESET = 5
+STOP = 6
+
 startTime = 0.0
 endTime = 0.0
 
 @app.route('/health', methods=['GET'])
-def health():
+def start():
+    print "HEALTHCHECK received"
     return Response(status=200)
 
 @app.route('/start', methods=['POST'])
 def start():
-    global startTime, startSignal
-    print "START signal received . . ."
+    global STATE, stateLock
+    print "START signal received"
     try:
         data = json.loads(request.data)
-        with startLock:
+        with stateLock:
             startTime = data['start_time']
-            startSignal = True
+            STATE = STARTED
     except:
         startTime = time.time()
-        startSignal = True
+        STATE = STARTED
         print "error getting start time"
     return Response(status=200)
 
 @app.route('/stop', methods=['POST'])
-def stop():
-    global endTime, stopSignal
+def start():
+    global STATE, stateLock
     print "STOP signal received"
     try:
         data = json.loads(request.data)
-        with endLock:
+        with stateLock:
             endTime = data['stop_time']
-            stopSignal = True
+            STATE = STOP
     except:
         endTime = time.time()
-        stopSignal = True
-        print "error getting stop time"
+        STATE = STOP
+        print "error getting start time"
     return Response(status=200)
+
+@app.route('/reset', methods=['POST'])
+def stop():
+    global STATE, stateLock
+    print "RESET signal received"
+    with stateLock:
+        STATE = RESET
+    return Response(status=200)
+
+def notifyStart():
+    global startTime
+    payload = {"start_time": startTime}
+    headers = {'content-type': 'application/json'}
+    try:
+        s = requests.Session()
+        retries = Retry(
+            total=5,
+            read=5,
+            connect=5,
+            backoff_factor=0.3,
+            status_forcelist=[ 502, 503, 504 ])
+        s.mount('http://', HTTPAdapter(max_retries=retries))
+        resp = s.post("http://starterbuttonpi/start", data=json.dumps(payload), headers=headers)
+        if response.status_code != requests.codes.ok:
+            print "Error notifying start"
+    except:
+        print "Error exception occurred notifying start"
+
+def notifyDisplay():
+    global startTime
+    payload = {"start_time": startTime}
+    headers = {'content-type': 'application/json'}
+    try:
+        s = requests.Session()
+        retries = Retry(
+            total=5,
+            read=5,
+            connect=5,
+            backoff_factor=0.3,
+            status_forcelist=[ 502, 503, 504 ])
+        s.mount('http://', HTTPAdapter(max_retries=retries))
+        resp = s.post("http://noisemakerpi/start", data=json.dumps(payload), headers=headers)
+        if response.status_code != requests.codes.ok:
+            print "Error notifying display"
+    except:
+        print "Error exception occurred notifying display"
 
 
 def playBuzzer(lock):
     with lock:
-        #turn buzzer on
-        GPIO.output(24, True)
+        GPIO.output(BUZZER, True)
         time.sleep(3)
-        #turn off buzzer
-        GPIO.output(24, False)
+        GPIO.output(BUZZER, False)
 
-def notifyDisplay():
-    s = requests.Session()
-    retries = Retry(
-        total=5, 
-        read=5,
-        connect=5,
-        backoff_factor=0.3, 
-        status_forcelist=[ 502, 503, 504 ])
-    s.mount('http://', HTTPAdapter(max_retries=retries))
-    s.get("http://noisemakerpi/done")
-
-def reset():
-    global startTime, endTime
-    global startSignal, stopSignal
-    startSignal = False
-    stopSignal = False
-    stopButtonPressed = False
-    
-
-def start():
-    global buzzerLock
-    while not startSignal:
-        time.sleep(.01)
-
-    while not stopSignal:
-        time.sleep(.01)
-
-    if stopButtonPressed:
-        t = threading.Thread(target=playBuzzer, args=(buzzerLock,))
-        t.daemon = True
-        t.start()
-
-    notifyDisaply()
-
-
-    reset()
 
 def waitForStart():
+    global STATE
+    currState = -1
     while True:
-        start()
-        print "Finished one iteration"
+        with stateLock:
+            currState = STATE
+        if currState == WAIT :
+            time.sleep(0.1)
+        elif currState == STARTED:
+            time.sleep(0.1)
+        elif currState == RESET:
+            with stateLock:
+                STATE = WAIT
+        elif currState == STOP:
+            # POST time?
+            with stateLock:
+                STATE = WAIT
+        elif currState == DONE :
+            t = threading.Thread(target=playBuzzer, args=(buzzerLock,))
+            t.daemon = True
+            t.start()
 
-def waitForFinishButton():
-    global stopButtonPressed, buzzerLock
+            d = threading.Thread(target=notifyDisplay)
+            d.daemon = True
+            f = threading.Thread(target=notifyStart)
+            f.daemon = True
+            n.start()
+            d.start()
+            # PSOT time?
+            with stateLock:
+                STATE = WAIT
+            print "Finished one iteration"
+        else:
+            print "WARNING unknown state: " + currState
+
+def waitForButtonPress():
+    global stateLock, STATE, endTime
+    prevState = True
+    button_state = True
+    buttonPushTime = 0.0
     while True:
-         button_state = GPIO.input(DOME)
-         if button_state == False:
-            with endLock:
-                stopButtonPressed = True
-                stopSignal = True
-            print('Button Pressed...')
-            playBuzzer(buzzerLock)
-            time.sleep(2)
+        prevState = button_state
+        button_state = GPIO.input(DOME)
+        if button_state == False and prevState == True:
+            # button pressed
+            print "STOP button pressed"
+            with stateLock:
+                STATE = DONE
+                endTime = time.time()
+        elif button_state == True and prevState == False:
+            # button released
+            print "STOP button released"
+
+        time.sleep(.2)
 
 if __name__ == '__main__':
     try:
@@ -128,10 +172,10 @@ if __name__ == '__main__':
         s.daemon = True
         s.start()
 
-        b = threading.Thread(target=waitForFinishButton)
+        b = threading.Thread(target=waitForButtonPress)
         b.daemon = True
         b.start()
-        
+
         #start flask server
         app.run(port=9080, debug=True)
     except (KeyboardInterrupt, SystemExit):
