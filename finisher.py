@@ -23,7 +23,7 @@ startTime = 0.0
 endTime = 0.0
 
 @app.route('/health', methods=['GET'])
-def start():
+def health():
     print "HEALTHCHECK received"
     return Response(status=200)
 
@@ -43,7 +43,7 @@ def start():
     return Response(status=200)
 
 @app.route('/stop', methods=['POST'])
-def start():
+def stop():
     global STATE, stateLock
     print "STOP signal received"
     try:
@@ -58,7 +58,7 @@ def start():
     return Response(status=200)
 
 @app.route('/reset', methods=['POST'])
-def stop():
+def reset():
     global STATE, stateLock
     print "RESET signal received"
     with stateLock:

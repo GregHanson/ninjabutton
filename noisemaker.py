@@ -9,46 +9,61 @@ app = Flask(__name__)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(24, GPIO.OUT)  #TURN on LED strip to GPIO24
 
-startLock = threading.Lock()
-endLock = threading.Lock()
+stateLock = threading.Lock()
 
-stopSignal = False
-startSignal = False
+STATE = 0
+WAIT = 1
+STARTED = 3
+DONE = 4
+RESET = 5
+STOP = 6
+
 startTime = 0.0
 endTime = 0.0
 
 spi = spidev.SpiDev()
 
+@app.route('/health', methods=['GET'])
+def heath():
+    print "HEALTHCHECK received"
+    return Response(status=200)
+
 @app.route('/start', methods=['POST'])
 def start():
-    global startTime
-    global startSignal
-    print "START signal received . . . "
+    global STATE, stateLock
+    print "START signal received"
     try:
         data = json.loads(request.data)
-        with startLock:
+        with stateLock:
             startTime = data['start_time']
-            startSignal = True
+            STATE = STARTED
     except:
         startTime = time.time()
-        startSignal = True
+        STATE = STARTED
         print "error getting start time"
     return Response(status=200)
 
 @app.route('/stop', methods=['POST'])
 def stop():
-    global endTime
-    global stopSignal
-    print "STOP signal received . . ."
+    global STATE, stateLock
+    print "STOP signal received"
     try:
         data = json.loads(request.data)
-        with endLock:
+        with stateLock:
             endTime = data['stop_time']
-            stopSignal = True
+            STATE = STOP
     except:
         endTime = time.time()
-        stopSignal = True
-        print "error getting stop time"
+        STATE = STOP
+        print "error getting start time"
+    return Response(status=200)
+
+@app.route('/reset', methods=['POST'])
+def reset():
+    global STATE, stateLock
+    print "RESET signal received"
+    with stateLock:
+        STATE = RESET
     return Response(status=200)
 
 def disable():
@@ -69,14 +84,6 @@ def display(start, end):
     milli = int((display % 1)*100)
     print ("Mins:{0} Secs:{1} Milli:{2}".format(mins, seconds, milli))
 
-#def postTime(start, stop):
-
-def reset():
-    global startTime, endTime
-    global startSignal, stopSignal
-    startSignal = False
-    stopSignal = False
-
 def finished(start, stop):
     i = 0
     while i < 3:
@@ -86,33 +93,43 @@ def finished(start, stop):
         time.sleep(1)
         i+=1
 
-def start():
-    while not startSignal:
-        time.sleep(2)
-
-    while not stopSignal:
-        time.sleep(.01)
-        display(startTime, time.time())
-
-    finished(startTime, endTime)
-    reset()
-
-def runDisplay():
+def waitForStart():
+    global STATE
+    currState = -1
     while True:
-        start()
-        print "FINISHED"
+        with stateLock:
+            currState = STATE
+        if currState == WAIT:
+            display(0, 0)
+            time.sleep(0.1)
+        elif currState == STARTED:
+            display(startTime, time.time())
+            time.sleep(0.1)
+        elif currState == RESET:
+            with stateLock:
+                STATE = WAIT
+        elif currState == STOP:
+            # POST time?
+            with stateLock:
+                STATE = WAIT
+        elif currState == DONE :
+            finished(startTime, endTime)
+            # POST time?
+            with stateLock:
+                STATE = WAIT
+            print "Finished one iteration"
+        else:
+            print "WARNING unknown state: " + currState
 
-    
 if __name__ == '__main__':
-    t = threading.Thread(target=runDisplay)
     try:
-        #start LED display monitoring
-        t.daemon = True
-        t.start()
-        
+        s = threading.Thread(target=waitForStart)
+        s.daemon = True
+        s.start()
+
         #start flask server
         app.run(port=9080, debug=True)
     except (KeyboardInterrupt, SystemExit):
         print "caught keyboard interrupt"
     finally:
-        GPIO.cleanup()        
+        GPIO.cleanup()
