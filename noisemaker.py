@@ -1,8 +1,10 @@
-import threading, time, spidev
+import threading, time, spidev, json
 import RPi.GPIO as GPIO
-import json
-
 from flask import Flask, request, Response
+import requests
+
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 app = Flask(__name__)
 
@@ -119,9 +121,10 @@ def waitForStart():
                 STATE = WAIT
             print "Finished one iteration"
         else:
-            print "WARNING unknown state: " + currState
+            print "WARNING unknown state: " + str(currState)
 
 if __name__ == '__main__':
+    STATE = WAIT
     try:
         s = threading.Thread(target=waitForStart)
         s.daemon = True

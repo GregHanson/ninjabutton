@@ -1,5 +1,11 @@
-import threading, time
-from flask import Flask, request
+import threading, time, json
+import RPi.GPIO as GPIO
+from flask import Flask, request, Response
+import requests
+
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
 app = Flask(__name__)
 
 DOME = 23
@@ -144,7 +150,7 @@ def waitForStart():
                 STATE = WAIT
             print "Finished one iteration"
         else:
-            print "WARNING unknown state: " + currState
+            print "WARNING unknown state: " + str(currState)
 
 def waitForButtonPress():
     global stateLock, STATE, endTime
@@ -167,6 +173,7 @@ def waitForButtonPress():
         time.sleep(.2)
 
 if __name__ == '__main__':
+    STATE = WAIT
     try:
         s = threading.Thread(target=waitForStart)
         s.daemon = True
