@@ -87,7 +87,9 @@ def disableDisplay():
 def convertToByte(digit):
     tens = digit / 10
     ones = digit % 10
-    return hex((tens << 4) | ones)
+    # bit shift the ints, convert to hex string
+    #return int(hex((tens << 4) | ones))
+    return (tens << 4) | ones
 
 def display(start, end):
     display = end - start
