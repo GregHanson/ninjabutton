@@ -121,20 +121,21 @@ def resetSystem():
     if fResp.status_code == requests.codes.ok and dResp.status_code == requests.codes.ok:
         print "WARNING system in a bad state"
 
-def playBuzzer(lock):
-    with lock:
+def playBuzzer():
+    global buzzerLock
+    with buzzerLock:
         i = 0
         while i < 3:
             #turn buzzer on
-            GPIO.output(24, True)
+            GPIO.output(BUZZER, True)
             time.sleep(1)
             #turn off buzzer
-            GPIO.output(24, False)
+            GPIO.output(BUZZER, False)
             time.sleep(1)
 
-        GPIO.output(24, True)
+        GPIO.output(BUZZER, True)
         time.sleep(3)
-        GPIO.output(24, False)
+        GPIO.output(BUZZER, False)
 
 def forceStop():
     global endTime
@@ -151,7 +152,7 @@ def forceStop():
             backoff_factor=0.3,
             status_forcelist=[ 502, 503, 504 ])
         d.mount('http://', HTTPAdapter(max_retries=retries))
-        dResp = d.post("http://noisemakerpi/stop")
+        dResp = d.post("http://noisemakerpi/stop", data=json.dumps(payload), headers=headers)
         dStatus = dResp.status_code
     except:
         print "Error connecting to noisemakerpi"
@@ -165,7 +166,7 @@ def forceStop():
             backoff_factor=0.3,
             status_forcelist=[ 502, 503, 504 ])
         f.mount('http://', HTTPAdapter(max_retries=retries))
-        fResp = f.post("http://finisherbuttonpi/stop")
+        fResp = f.post("http://finisherbuttonpi/stop", data=json.dumps(payload), headers=headers)
         fStatus = fResp.status_code
     except:
         print "Error connecting to finisherbuttonpi"
@@ -225,7 +226,12 @@ def waitForStart():
             d.daemon = True
             f = threading.Thread(target=notifyStop)
             f.daemon = True
-            playBuzzer(buzzerLock)
+            b = threading.Thread(target=playBuzzer)
+            b.daemon = True
+            b.start()
+            # wait for first 3 tones of buzzer to play
+            time.sleep(6)
+
             startTime = time.time()
             n.start()
             d.start()

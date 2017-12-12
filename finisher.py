@@ -156,7 +156,6 @@ def waitForButtonPress():
     global stateLock, STATE, endTime
     prevState = True
     button_state = True
-    buttonPushTime = 0.0
     while True:
         prevState = button_state
         button_state = GPIO.input(DOME)

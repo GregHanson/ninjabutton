@@ -8,8 +8,10 @@ from requests.packages.urllib3.util.retry import Retry
 
 app = Flask(__name__)
 
+LED = 24
+
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(24, GPIO.OUT)  #TURN on LED strip to GPIO24
+GPIO.setup(LED, GPIO.OUT)  #TURN on LED strip to GPIO24
 
 stateLock = threading.Lock()
 
@@ -24,6 +26,7 @@ startTime = 0.0
 endTime = 0.0
 
 spi = spidev.SpiDev()
+spi.open(0, 1) # Port 0 , Chip Select 1
 
 @app.route('/health', methods=['GET'])
 def heath():
@@ -68,31 +71,45 @@ def reset():
         STATE = RESET
     return Response(status=200)
 
-def disable():
+def enableDisplay():
+    GPIO.output(LED, True)
+    return
+
+def disableDisplay():
     #turn off display
-    print "disable() not configured"
-    # channel = 1
+    GPIO.output(LED, False)    # channel = 1
     # spi.open(0,channel) # Port 0 , Chip Select 1
     # spiValue = spi.xfer2([1,OutValue])
     # time.sleep(2)
     # spi.close()
     # return spiValue
 
+def convertToByte(digit):
+    tens = digit / 10
+    ones = digit % 10
+    return hex((tens << 4) | ones)
 
 def display(start, end):
     display = end - start
     mins = int(display / 60)
     seconds = int(display % 60)
     milli = int((display % 1)*100)
+
+    minByte = convertToByte(mins)
+    secByte = convertToByte(seconds)
+    milliByte = convertToByte(milli)
+
     print ("Mins:{0} Secs:{1} Milli:{2}".format(mins, seconds, milli))
+
+    spiValue = spi.xfer2([minByte, secByte, milliByte])
 
 def finished(start, stop):
     i = 0
     while i < 3:
-        display(start, stop)
-        time.sleep(2)
-        disable()
+        disableDisplay()
         time.sleep(1)
+        enableDisplay()
+        time.sleep(2)
         i+=1
 
 def waitForStart():
@@ -102,6 +119,7 @@ def waitForStart():
         with stateLock:
             currState = STATE
         if currState == WAIT:
+            enableDisplay()
             display(0, 0)
             time.sleep(0.1)
         elif currState == STARTED:
@@ -117,6 +135,7 @@ def waitForStart():
         elif currState == DONE :
             finished(startTime, endTime)
             # POST time?
+            time.sleep(20)
             with stateLock:
                 STATE = WAIT
             print "Finished one iteration"
@@ -126,6 +145,7 @@ def waitForStart():
 if __name__ == '__main__':
     STATE = WAIT
     try:
+
         s = threading.Thread(target=waitForStart)
         s.daemon = True
         s.start()
@@ -136,3 +156,4 @@ if __name__ == '__main__':
         print "caught keyboard interrupt"
     finally:
         GPIO.cleanup()
+        spi.close()
