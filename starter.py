@@ -12,7 +12,7 @@ DOME = 23
 BUZZER = 24
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(DOME, GPIO.IN, pull_up_down=GPIO.PUD_UP)  #dome button to GPIO23
+GPIO.setup(DOME, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  #dome button to GPIO23
 GPIO.setup(BUZZER, GPIO.OUT)  # to GPIO24
 
 buzzerLock = threading.Lock()
@@ -297,7 +297,7 @@ if __name__ == '__main__':
         b.start()
 
         #start flask server
-        app.run(port=9080, debug=True)
+        app.run(port=9080, debug=False)
     except (KeyboardInterrupt, SystemExit):
         print "caught keyboard interrupt"
     finally:
