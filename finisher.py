@@ -12,7 +12,7 @@ DOME = 23
 BUZZER = 24
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(DOME, GPIO.IN, pull_up_down=GPIO.PUD_UP)  #dome button to GPIO23
+GPIO.setup(DOME, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)  #dome button to GPIO23
 GPIO.setup(BUZZER, GPIO.OUT)  # to GPIO24
 
 buzzerLock = threading.Lock()
@@ -143,7 +143,7 @@ def waitForStart():
             d.daemon = True
             f = threading.Thread(target=notifyStart)
             f.daemon = True
-            n.start()
+            f.start()
             d.start()
             # PSOT time?
             with stateLock:
