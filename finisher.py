@@ -183,7 +183,7 @@ if __name__ == '__main__':
         b.start()
 
         #start flask server
-        app.run(port=9080, debug=True)
+        app.run(port=9080, debug=False)
     except (KeyboardInterrupt, SystemExit):
         print "caught keyboard interrupt"
     finally:
