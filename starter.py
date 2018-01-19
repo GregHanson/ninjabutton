@@ -128,10 +128,11 @@ def playBuzzer():
         while i < 3:
             #turn buzzer on
             GPIO.output(BUZZER, True)
-            time.sleep(1)
+            time.sleep(.5)
             #turn off buzzer
             GPIO.output(BUZZER, False)
-            time.sleep(1)
+            time.sleep(.5)
+            i+=1
 
         GPIO.output(BUZZER, True)
         time.sleep(3)
@@ -230,10 +231,10 @@ def waitForStart():
             b.daemon = True
             b.start()
             # wait for first 3 tones of buzzer to play
-            time.sleep(6)
+            time.sleep(3)
 
             startTime = time.time()
-            n.start()
+            f.start()
             d.start()
             with stateLock:
                 STATE = STARTED
